@@ -17,17 +17,17 @@
 
 ```mermaid
 flowchart TD
-    START[Start Sensor Read Cycle] --> READ_ADC[ads.readADC_SingleEnded(0)]
-    READ_ADC --> CHECK_ADC{ADC != 0}
-    CHECK_ADC -- No --> RETRY[Retry (≤100ms): yield() + delay(1ms)] --> READ_ADC
-    CHECK_ADC -- Yes --> CALC_VOLTAGE[Convert: V = ADC × 6.144 / 32767]
-    CALC_VOLTAGE --> CALC_RAW_PH[raw_pH = V × 3.5]
-    CALC_RAW_PH --> CALIBRATED?{Calibrated?}
-    CALIBRATED? -- Yes --> CALC_CAL_PH[cal_pH = m × V + c]
-    CALIBRATED? -- No --> USE_RAW[Use raw_pH as cal_pH]
-    CALC_CAL_PH --> CLAMP[Clamp pH: 0..14]
-    USE_RAW --> CLAMP
-    CLAMP --> PUBLISH[Push to MQTT payload]
+    START[Start Sensor Read Cycle] --> READ_ADC["ads.readADC_SingleEnded(0)"]
+    READ_ADC --> CHECK_ADC{ADC ≠ 0?}
+    CHECK_ADC -- No  --> RETRY["Retry (≤ 100 ms)\nyield() + delay(1 ms)"] --> READ_ADC
+    CHECK_ADC -- Yes --> CALC_VOLT["V = ADC × 6.144 / 32767"]
+    CALC_VOLT --> CALC_RAW["raw_pH = V × 3.5"]
+    CALC_RAW --> IS_CAL{Calibrated?}
+    IS_CAL -- Yes --> CALC_CAL["cal_pH = m × V + c"]
+    IS_CAL -- No  --> USE_RAW["cal_pH = raw_pH"]
+    CALC_CAL --> CLAMP["Clamp 0 ≤ pH ≤ 14"]
+    USE_RAW  --> CLAMP
+    CLAMP --> PUBLISH["Publish to MQTT payload"]
 ````
 
 ---
