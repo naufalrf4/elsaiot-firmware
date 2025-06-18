@@ -5,7 +5,6 @@
 #include <WiFiManager.h>
 #include "DeviceConfig.h"
 
-// === CONFIGURATION ===
 #define AP_TIMEOUT_SEC        180
 #define WIFI_CONNECT_TIMEOUT   20
 #define RESET_PIN               0 

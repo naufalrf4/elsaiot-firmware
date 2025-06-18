@@ -14,7 +14,6 @@ void initTemperatureSensor() {
   Serial.println("🌡️ Temperature sensor initialized.");
 }
 
-// === Read Temperature (°C) ===
 float readTemperatureC() {
   uint32_t startTime = millis();
   sensors.requestTemperatures();

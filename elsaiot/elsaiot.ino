@@ -28,10 +28,10 @@ void setup() {
     .idle_core_mask = (1 << portNUM_PROCESSORS) - 1,
     .trigger_panic = true
   };
+  
   esp_task_wdt_init(&wdt_config);
   esp_task_wdt_add(NULL);
 
-  // Initialize storage first
   initStorage();
   loadCalibrationData();
   loadThresholdData();
