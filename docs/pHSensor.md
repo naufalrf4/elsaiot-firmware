@@ -16,33 +16,18 @@
 ### 2. Firmware Data-Path  
 
 ```mermaid
-stateDiagram-v2
-    [*] --> INIT
-    INIT : initPHSensor()\n(Serial banner only)
-    INIT --> LOOP
-
-    state LOOP {
-        [*] --> START
-        START --> READ_ADC : ads.readADC_SingleEnded(0)
-        READ_ADC --> CHECK{ADC != 0 ?}
-        CHECK -->|false| RETRY
-        RETRY : yield()+delay(1 ms)\n(≤100 ms total)
-        RETRY --> READ_ADC
-
-        CHECK -->|true| VOLT
-        VOLT : V = ADC * 6.144 / 32767
-        VOLT --> RAWpH
-        RAWpH : pH_raw = V * 3.5
-        RAWpH --> CAL{calibrated?}
-        CAL -->|no| CLAMP
-        CAL -->|yes| LIN
-        LIN : pH_cal = m*V + c
-        LIN --> CLAMP
-        CLAMP : limit 0..14
-        CLAMP --> PUBLISH
-        PUBLISH : push to queue / MQTT
-        PUBLISH --> [*]
-    }
+flowchart TD
+    START[Start Sensor Read Cycle] --> READ_ADC[ads.readADC_SingleEnded(0)]
+    READ_ADC --> CHECK_ADC{ADC != 0}
+    CHECK_ADC -- No --> RETRY[Retry (≤100ms): yield() + delay(1ms)] --> READ_ADC
+    CHECK_ADC -- Yes --> CALC_VOLTAGE[Convert: V = ADC × 6.144 / 32767]
+    CALC_VOLTAGE --> CALC_RAW_PH[raw_pH = V × 3.5]
+    CALC_RAW_PH --> CALIBRATED?{Calibrated?}
+    CALIBRATED? -- Yes --> CALC_CAL_PH[cal_pH = m × V + c]
+    CALIBRATED? -- No --> USE_RAW[Use raw_pH as cal_pH]
+    CALC_CAL_PH --> CLAMP[Clamp pH: 0..14]
+    USE_RAW --> CLAMP
+    CLAMP --> PUBLISH[Push to MQTT payload]
 ````
 
 ---
