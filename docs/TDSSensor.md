@@ -17,22 +17,23 @@
 
 ```mermaid
 flowchart TD
-    START[Mulai Pembacaan Sensor] --> READ_ADC[Baca ADC: ads.readADC_SingleEnded(1)]
-    READ_ADC --> TO_VOLT[Kalkulasi Tegangan: V = ADC × 6.144 / 32767]
-    TO_VOLT --> RAW_TDS[Hitung TDS Mentah: raw = V × 1000]
-    RAW_TDS --> IS_CALIB{Sudah dikalibrasi?}
+    START["Mulai pembacaan"] --> READ_ADC["Baca ADC\nads.readADC_SingleEnded(1)"]
+    READ_ADC --> V_CALC["Hitung tegangan\nV = ADC × 6.144 / 32767"]
+    V_CALC --> RAW_TDS["TDS_mentah = V × 1000"]
     
-    IS_CALIB -- Tidak --> USE_RAW[Gunakan raw sebagai TDS akhir]
-    USE_RAW --> LIMIT[Clamp: Batas 0–1000 ppm]
+    RAW_TDS --> IS_CALIB{Sudah kalibrasi?}
     
-    IS_CALIB -- Ya --> COMP_TEMP[Kompensasi Suhu: coeff = 1 + 0.02 × (T − 25)]
-    COMP_TEMP --> ADJUST_V[Hitung V': V' = V / coeff]
-    ADJUST_V --> POLY_CALC[Polinomial: f(V') = aV³ - bV² + cV]
-    POLY_CALC --> APPLY_K[Kalibrasi: cal = f(V') × 0.5 × K]
+    IS_CALIB -- "Tidak" --> USE_RAW["TDS_akhir = TDS_mentah"]
+    USE_RAW --> LIMIT
+    
+    IS_CALIB -- "Ya" --> TEMP_COMP["Kompensasi suhu\ncoeff = 1 + 0.02 × (T − 25)"]
+    TEMP_COMP --> V_COMP["V' = V / coeff"]
+    V_COMP --> POLY["f(V') = 133.42·V'^3 − 255.86·V'^2 + 857.39·V'"]
+    POLY --> APPLY_K["TDS_akhir = f(V') × 0.5 × K"]
     APPLY_K --> LIMIT
-
-    LIMIT --> STORE[Simpan ke lastTDSmgL]
-    STORE --> MQTT[Publish ke MQTT topic /data]
+    
+    LIMIT["Clamp 0 – 1000 ppm"] --> STORE["Simpan ke lastTDSmgL"]
+    STORE --> MQTT["Publish ke MQTT /data"]
 ````
 
 ---
