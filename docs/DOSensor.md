@@ -20,22 +20,26 @@
 
 ```mermaid
 flowchart TD
-    START[Mulai Pembacaan Sensor] --> READ_ADC[Baca ADC: ads.readADC_SingleEnded(2)]
-    READ_ADC --> TO_mV[Konversi: V = ADC × (6.144 / 32767) × 1000]
-    TO_mV --> RAW_DO[Raw DO = V × 6.5 / 1000]
-    RAW_DO --> IS_CALIB{Sudah Kalibrasi?}
+    START["Mulai pembacaan"] --> READ_ADC["ads.readADC_SingleEnded(2)"]
+    READ_ADC --> MV["V_mV = ADC × 6.144 / 32767 × 1000"]
+    MV --> RAW_DO["DO_raw = V_mV × 6.5 / 1000"]
+    RAW_DO --> IS_CALIB{Kalibrasi?}
 
-    IS_CALIB -- Tidak --> USE_RAW[Gunakan raw sebagai cal]
-    IS_CALIB -- Ya --> LOOKUP[Ambil DO_Sat dari tabel suhu]
-    LOOKUP --> V_SAT_MODE{2 titik?}
-    V_SAT_MODE -- Ya --> CALC_VSAT2["Interpolasi Vsat 2 titik"]
-    V_SAT_MODE -- Tidak --> CALC_VSAT1["Vsat = V + 35×(T−Tref)"]
-    CALC_VSAT2 --> FINAL
-    CALC_VSAT1 --> FINAL
-    FINAL["DO = V × DO_Sat / Vsat / 1000"] --> CLAMP
-    USE_RAW --> CLAMP["Clamp 0–20 mg/L"]
-    CLAMP --> STORE[Simpan lastDOmgL]
-    STORE --> MQTT[Publish ke MQTT]
+    IS_CALIB -- "Tidak" --> USE_RAW["DO_final = DO_raw"]
+
+    IS_CALIB -- "Ya" --> SAT_TABLE["DO_sat = lookup(T)"]
+    SAT_TABLE --> VSAT_MODE{Mode kalibrasi}
+
+    VSAT_MODE -- "2 titik" --> VSAT2["Vsat = interpolasi(T)"]
+    VSAT_MODE -- "1 titik" --> VSAT1["Vsat = V_cal1 + 35·(T − T_cal1)"]
+
+    VSAT2 --> CALC
+    VSAT1 --> CALC
+    CALC["DO_final = V_mV × DO_sat / Vsat / 1000"] --> CLAMP["Clamp 0–20 mg/L"]
+
+    USE_RAW --> CLAMP
+    CLAMP --> STORE["lastDOmgL ← DO_final"]
+    STORE --> MQTT["Publish ke topic /data"]
 ````
 
 ---
@@ -326,62 +330,113 @@ elsaiot/<device_id>/ack/calibrate
 
 ---
 
-### 6. Prosedur Kalibrasi Lapangan
+### 6. Prosedur Kalibrasi Lapangan – Dissolved Oxygen (DO)
 
 ---
 
-#### 6.1 Untuk Pengguna (via UI)
+#### 6.1 Untuk Pengguna (UI Elsaiot)
 
-1. **Persiapan**  
-   - Siapkan larutan jenuh oksigen (misalnya: air deionisasi teroksigenasi penuh).  
-   - Pastikan suhu larutan diketahui dan stabil (gunakan termometer referensi).
-
-2. **Langkah Kalibrasi**  
-   - Celupkan probe DO ke larutan.  
-   - Tunggu hingga pembacaan tegangan stabil.  
-   - Di antarmuka UI, pilih:
-     - **Single-point** jika hanya 1 titik suhu digunakan.  
-     - **Two-point** jika ingin akurasi lebih tinggi dengan 2 suhu berbeda.
-
-3. **Simpan Titik Kalibrasi**  
-   - Tekan tombol konfirmasi (mis. "Gunakan Titik Kalibrasi 1").  
-   - Sistem otomatis mengambil nilai tegangan (`voltage`) dan suhu (`temperature`) dari stream data terakhir.
-
-4. **Publikasi Kalibrasi ke Perangkat**  
-   - Backend mengirim payload MQTT ke topik:
-     ```
-     elsaiot/<device_id>/calibrate
-     ```
-     dengan format JSON (lihat §5.2).
-
-5. **Aktivasi Kalibrasi**  
-   - Perangkat menyimpan nilai ke NVS.
-   - `do_calibrated = true` diaktifkan.
-   - Status dikirim balik melalui MQTT `/ack/calibrate`.
+**Tujuan:** Mengatur pembacaan sensor DO agar sesuai dengan nilai aktual larutan jenuh oksigen pada suhu tertentu, menggunakan satu atau dua titik kalibrasi.
 
 ---
 
-#### 6.2 Proses Teknis Backend
+##### A. Persiapan
 
-- Backend tidak menghitung apa pun secara manual.
-- Sistem hanya:
-  1. **Mendengarkan** topik data:
-     ```
-     elsaiot/<device_id>/data
-     ```
-     untuk membaca tegangan (`voltage`) dan suhu saat user klik konfirmasi.
-  2. **Membungkus data** ke format JSON.
-  3. **Mengirim payload** ke topik:
-     ```
-     elsaiot/<device_id>/calibrate
-     ```
-- Firmware perangkat akan:
-  - Menerima payload.
-  - Menyimpan parameter.
-  - Mengaktifkan mode `single` atau `double`.
-  - Menerapkan logika regresi berdasarkan suhu real-time.
+1. Siapkan larutan jenuh DO (misalnya: air deionisasi tersaturasi oksigen).
+2. Pastikan suhu larutan diketahui secara akurat (gunakan termometer eksternal).
+3. Hidupkan sensor dan tunggu hingga nilai stabil (≈10 detik).
 
-> **Catatan:** semua logika regresi (`vSat`, DO Table, dan perhitungan final mg/L) terjadi sepenuhnya di sisi firmware.
+---
+
+##### B. Langkah Kalibrasi (UI)
+
+1. Pilih menu **Kalibrasi DO**.
+2. Tentukan mode kalibrasi:
+   - **Single-point** → gunakan 1 suhu (misalnya 25 °C).
+   - **Two-point** → gunakan 2 suhu berbeda (misalnya 20 °C dan 30 °C).
+3. Untuk tiap titik:
+   - Celupkan probe ke larutan.
+   - Tekan tombol “Konfirmasi Titik Kalibrasi”.
+   - Sistem akan otomatis menyimpan:
+     - Tegangan (`vX`) dari stream `/data`.
+     - Suhu (`tX`) saat itu.
+4. Setelah semua titik disimpan, backend akan mengirimkan payload ke perangkat.
+
+---
+
+##### C. Payload Kalibrasi MQTT
+
+- Topik:
+```
+
+elsaiot/\<device\_id>/calibrate
+
+````
+
+- Format:
+
+**Single-Point**
+```json
+{
+"do": {
+  "mode": "single",
+  "v1": 1450.0,
+  "t1": 25.0
+}
+}
+````
+
+**Two-Point**
+
+```json
+{
+  "do": {
+    "mode": "double",
+    "v1": 1600.0,
+    "t1": 20.0,
+    "v2": 1000.0,
+    "t2": 30.0
+  }
+}
+```
+
+---
+
+##### D. Konfirmasi Kalibrasi
+
+1. Perangkat menerima payload di `handleCalibrateMessage()`.
+2. Menyimpan nilai `v1`, `t1`, `v2`, `t2` ke dalam NVS.
+3. Aktifkan `do_calibrated = true` dan `do_two_point_mode` sesuai mode.
+4. Kirim balasan ACK:
+
+```json
+{
+  "status": {
+    "do": {
+      "calibrated": true,
+      "mode": "single-point"
+    }
+  }
+}
+```
+
+---
+
+#### 6.2 Proses Backend Teknis (Elsaiot)
+
+* Backend hanya bertugas sebagai relay UI → MQTT.
+* Tidak ada perhitungan `vSat`, `DO_Table`, atau `mg/L` di backend.
+* Semua logika kalibrasi berada di firmware perangkat (lihat `calcDOmgL()`).
+* Fungsi backend:
+
+  1. Ambil `voltage` dan `temperature` dari stream `/data`.
+  2. Bungkus sebagai payload sesuai format.
+  3. Kirim ke topik MQTT `calibrate`.
+  4. Terima dan simpan ACK di log aplikasi.
+
+---
+
+> 🔧 Mode single-point cukup untuk sebagian besar aplikasi. Gunakan two-point hanya jika DO digunakan di suhu bervariasi ekstrem (mis. akuakultur).
 
 ### 7. Logika Ambang Batas DO
 
